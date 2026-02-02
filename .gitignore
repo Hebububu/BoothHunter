@@ -1,0 +1,21 @@
+node_modules/
+dist/
+src-tauri/target/
+
+# Debug/temp files
+debug_*.html
+cookies.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
