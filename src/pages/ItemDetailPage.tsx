@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -16,6 +16,8 @@ export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const itemId = id ? parseInt(id, 10) : NaN;
   const [currentImage, setCurrentImage] = useState(0);
+
+  useEffect(() => setCurrentImage(0), [itemId]);
 
   const { data: item, isLoading, error } = useQuery({
     queryKey: ["item", itemId],
@@ -42,12 +44,15 @@ export default function ItemDetailPage() {
     if (!item) return;
     try {
       const parsed = new URL(item.url);
-      const validHost = parsed.hostname === "booth.pm" || parsed.hostname.endsWith(".booth.pm");
+      const host = parsed.hostname;
+      const validHost =
+        host === "booth.pm" ||
+        (host != null && host.endsWith(".booth.pm"));
       if (parsed.protocol === "https:" && validHost) {
         await open(item.url);
       }
-    } catch (e) {
-      console.error("Failed to open URL:", e);
+    } catch {
+      // URL parsing failed or open failed — no action needed
     }
   };
 

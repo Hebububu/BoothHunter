@@ -17,7 +17,7 @@ impl AppDatabase {
         let db_path = app_data_dir.join("boothhunter.db");
         let conn = Connection::open(&db_path)?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys = ON;")?;
 
         // Idempotent migrations
         conn.execute_batch(
@@ -63,6 +63,45 @@ impl AppDatabase {
             );",
         )?;
 
+        // Migration v4: collections & tags
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS collections (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                color       TEXT DEFAULT '#6366f1',
+                created_at  TEXT DEFAULT (datetime('now')),
+                sort_order  INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS collection_items (
+                collection_id  INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+                item_id        INTEGER NOT NULL,
+                added_at       TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (collection_id, item_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS item_tags (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id  INTEGER NOT NULL,
+                tag      TEXT NOT NULL,
+                UNIQUE(item_id, tag)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_collection_items_item ON collection_items(item_id);
+            CREATE INDEX IF NOT EXISTS idx_item_tags_item ON item_tags(item_id);
+            CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags(tag);",
+        )?;
+
+        // Migration v3: add wish_count column to cached_items
+        let has_wish_count: bool = conn
+            .prepare("SELECT wish_count FROM cached_items LIMIT 0")
+            .is_ok();
+        if !has_wish_count {
+            conn.execute_batch(
+                "ALTER TABLE cached_items ADD COLUMN wish_count INTEGER;",
+            )?;
+        }
+
         // Migration v2: replace old default avatars (pre-2023) with new popular ones
         let has_old_defaults: bool = conn.query_row(
             "SELECT COUNT(*) > 0 FROM popular_avatars WHERE name_ja = 'しなの' AND is_default = 1",
@@ -76,6 +115,12 @@ impl AppDatabase {
         // Seed default popular avatars (INSERT OR IGNORE is idempotent)
         Self::seed_default_avatars(&conn)?;
 
+        // Evict cached items older than 30 days to prevent unbounded growth
+        conn.execute(
+            "DELETE FROM cached_items WHERE cached_at < datetime('now', '-30 days')",
+            [],
+        )?;
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -86,6 +131,12 @@ impl AppDatabase {
             log::error!("Database mutex poisoned: {}", e);
             AppError::Database(format!("Lock poisoned: {}", e))
         })
+    }
+
+    /// Returns a mutable reference to the connection for transaction use.
+    /// Callers should use `conn_mut()` when they need `Transaction` via `conn.transaction()`.
+    pub fn conn_mut(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
+        self.conn()
     }
 
     fn seed_default_avatars(conn: &Connection) -> AppResult<()> {

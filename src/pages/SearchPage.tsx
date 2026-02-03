@@ -18,6 +18,7 @@ export default function SearchPage() {
     totalCount,
     currentPage,
     isLoading,
+    isEnriching,
     error,
     hasSearched,
     currentParams,
@@ -35,10 +36,6 @@ export default function SearchPage() {
   }, [activeCategory, updateFilters]);
 
   const handleSearch = (keyword: string) => {
-    search(keyword, activeCategory ? { category: activeCategory } : undefined);
-  };
-
-  const handleAvatarSearch = (keyword: string) => {
     search(keyword, activeCategory ? { category: activeCategory } : undefined);
   };
 
@@ -85,7 +82,7 @@ export default function SearchPage() {
 
         {/* Avatar Quick Filter */}
         <div className="mt-3">
-          <AvatarQuickFilter onSearch={handleAvatarSearch} />
+          <AvatarQuickFilter onSearch={handleSearch} />
         </div>
 
         {hasSearched && (
@@ -93,6 +90,7 @@ export default function SearchPage() {
             <FilterPanel
               params={currentParams!}
               onFilterChange={updateFilters}
+              isEnriching={isEnriching}
             />
           </div>
         )}

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getFavorites,
@@ -14,6 +15,14 @@ export function useFavorites() {
     queryFn: (): Promise<FavoriteItem[]> => getFavorites(),
   });
 
+  const favorites = favoritesQuery.data ?? [];
+
+  // O(1) lookup instead of O(n) .some() scan per call
+  const favoriteIdSet = useMemo(
+    () => new Set(favorites.map((f) => f.item_id)),
+    [favorites],
+  );
+
   const addMutation = useMutation({
     mutationFn: async (item: BoothItem) => {
       await addFavoriteApi({
@@ -25,7 +34,31 @@ export function useFavorites() {
         shop_name: item.shop_name,
       });
     },
-    onSuccess: () => {
+    onMutate: async (item: BoothItem) => {
+      await queryClient.cancelQueries({ queryKey: ["favorites"] });
+      const previous = queryClient.getQueryData<FavoriteItem[]>(["favorites"]);
+      queryClient.setQueryData<FavoriteItem[]>(["favorites"], (old = []) => [
+        {
+          id: -Date.now(),
+          item_id: item.id,
+          name: item.name,
+          price: item.price,
+          thumbnail_url: item.images[0] || null,
+          category_name: item.category_name,
+          shop_name: item.shop_name,
+          added_at: new Date().toISOString(),
+          note: null,
+        },
+        ...old,
+      ]);
+      return { previous };
+    },
+    onError: (_err, _item, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["favorites"], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["favorites"] });
     },
   });
@@ -34,19 +67,28 @@ export function useFavorites() {
     mutationFn: async (itemId: number) => {
       await removeFavoriteApi(itemId);
     },
-    onSuccess: () => {
+    onMutate: async (itemId: number) => {
+      await queryClient.cancelQueries({ queryKey: ["favorites"] });
+      const previous = queryClient.getQueryData<FavoriteItem[]>(["favorites"]);
+      queryClient.setQueryData<FavoriteItem[]>(["favorites"], (old = []) =>
+        old.filter((f) => f.item_id !== itemId),
+      );
+      return { previous };
+    },
+    onError: (_err, _itemId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["favorites"], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["favorites"] });
     },
   });
 
-  const isFavorite = (itemId: number): boolean => {
-    return (
-      favoritesQuery.data?.some((f) => f.item_id === itemId) ?? false
-    );
-  };
+  const isFavorite = (itemId: number): boolean => favoriteIdSet.has(itemId);
 
   return {
-    favorites: favoritesQuery.data ?? [],
+    favorites,
     isLoading: favoritesQuery.isLoading,
     addFavorite: addMutation.mutateAsync,
     removeFavorite: removeMutation.mutateAsync,
