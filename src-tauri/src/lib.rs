@@ -33,7 +33,12 @@ async fn check_for_update(app: tauri::AppHandle) {
     };
 
     if let Some(state) = app.try_state::<PendingUpdate>() {
-        *state.0.lock().unwrap() = Some(update);
+        if let Ok(mut pending) = state.0.lock() {
+            *pending = Some(update);
+        } else {
+            log::error!("Failed to acquire lock on PendingUpdate: mutex poisoned");
+            return;
+        }
     }
 
     let _ = app.emit("update-available", info);

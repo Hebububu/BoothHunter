@@ -10,6 +10,8 @@ pub enum UpdateError {
     Updater(#[from] tauri_plugin_updater::Error),
     #[error("There is no pending update")]
     NoPendingUpdate,
+    #[error("Internal state lock is poisoned")]
+    MutexPoisoned,
 }
 
 impl Serialize for UpdateError {
@@ -41,7 +43,7 @@ pub async fn install_update(
     let update = pending_update
         .0
         .lock()
-        .unwrap()
+        .map_err(|_| UpdateError::MutexPoisoned)?
         .take()
         .ok_or(UpdateError::NoPendingUpdate)?;
 
@@ -98,5 +100,18 @@ mod tests {
     fn update_error_no_pending_display_message() {
         let error = UpdateError::NoPendingUpdate;
         assert_eq!(error.to_string(), "There is no pending update");
+    }
+
+    #[test]
+    fn update_error_mutex_poisoned_serializes_as_string() {
+        let error = UpdateError::MutexPoisoned;
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json, "Internal state lock is poisoned");
+    }
+
+    #[test]
+    fn update_error_mutex_poisoned_display_message() {
+        let error = UpdateError::MutexPoisoned;
+        assert_eq!(error.to_string(), "Internal state lock is poisoned");
     }
 }
