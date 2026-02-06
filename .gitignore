@@ -16,6 +16,9 @@ cookies.txt
 .DS_Store
 Thumbs.db
 
+# Test coverage
+coverage/
+
 # Environment
 .env
 .env.*
